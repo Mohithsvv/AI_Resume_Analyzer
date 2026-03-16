@@ -1,2 +1,2 @@
-# AI_Resume_Analyzer
-It takes Resume of the Candidate and Job Description and checks the Suitability of the Both.
+#AI_Pdf_Assistant
+This ai_pdf_assistant helps to interact the pdf document and retrieve suitable answer for the query.
