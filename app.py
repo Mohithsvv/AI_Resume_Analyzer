@@ -3,8 +3,6 @@ from google import genai
 from dotenv import load_dotenv
 import streamlit as st
 
-load_dotenv(override=True)
-
 st.title("AI_Resume_Builder")
 
 google_api_key = st.secrets["GOOGLE_API_KEY"]
