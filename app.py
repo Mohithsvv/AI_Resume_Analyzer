@@ -1,63 +1,80 @@
-
-import streamlit as st
 import os
+from google import genai
 from dotenv import load_dotenv
-from langchain_community.vectorstores import FAISS
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import CharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_classic.chains import RetrievalQA
-import tempfile
+import streamlit as st
+
+load_dotenv(override=True)
+
+st.title("AI_Resume_Builder")
 
 google_api_key = st.secrets["GOOGLE_API_KEY"]
+if not google_api_key:
+    st.error("Please check your google api keys")
+    st.stop()
 
-st.set_page_config(page_title="RAG Document Chat",layout="wide")
+client=genai.Client(api_key=google_api_key)
 
-st.title("Text only Pdf Assisstant")
-st.write("Upload the document")
+resume_text=st.text_area("Resume"," ",height=200)
+job_text=st.text_area("Job Description"," ",height=300)
 
-upload_file=st.sidebar.file_uploader("Upload the file",type="pdf")
+model_text=st.selectbox("Model",["gemini-2.0-flash","gemini-2.5-flash","gemini-1.5-flash"])
+temp=st.slider("Temperature",0.0,1.0,0.7)
+max_tokens=st.number_input("Max Tokens",min_value=64,max_value=2000,value=800)
 
-@st.cache_resource
-def load_embeddings():
-    return HuggingFaceEmbeddings(model_name="all-MiniLm-L6-v2")
+def extract_text(resp):
+    if hasattr(resp,"text") or resp.text:
+        return resp.text
+    if hasattr(resp,"output_text") or resp.output_text:
+        return resp.output_text
+    try:
+        return str(resp)
+    except Exception:
+        return "<no text>"
 
-def load_llm():
-    return ChatGoogleGenerativeAI(model="gemini-2.5-flash",temperature=0.1,google_api_key=google_api_key)
+def build_prompt(resume,job):
+    return f"""
+Context:
+    You are a professional career advisor and resume writer. Analyze the candidate's resume against the provided job description to assess alignment and identify areas for improvement. 
 
-llm=load_llm()
-embeddings=load_embeddings()
+    Tasks:
+    1. Summarize key requirements from the Job Description.  
+    2. Highlight relevant experience from the Resume that matches those requirements.  
+    3. Identify gaps or missing skills, especially in AI areas (Prompt Engineering, ChatGPT, GenAI, Agentic AI).  
+    4. Highlight additional strengths from the Resume that add value.  
+    5. Rewrite and enhance the Resume tailored for this job, ensuring:  
+    - Suitability Score (out of 100) 
+    - Strong action verbs and quantifiable results.  
+    - Emphasis on relevant skills/experience.  
+    - AI-related skills (Prompt engineering, ChatGPT, LLMs, Agentic AI) are clearly showcased.  
+    - Resume is well-formatted and impactful.
 
-if upload_file:
-    with tempfile.TemporaryDirectory() as temp_file:
-        temp_pdf_path=os.path.join(temp_file,"input.pdf")
-        with open(temp_pdf_path,"wb") as f:
-            f.write(upload_file.getvalue())
+Input:
+Resume:
+{resume}
 
-        loader=PyPDFLoader(temp_pdf_path)
-        docs=loader.load()
+Job Description:
+{job}
 
-        text_splitter=CharacterTextSplitter(chunk_size=1000,chunk_overlap=200)
-        chunks=text_splitter.split_documents(docs)
+Output:
+    - Analysis (sections 1–4 as above).  
+    - Updated, improved resume.
+"""
 
-        # @st.cache_resource
-        def vector_database(_doc,_embeddings):
-            return FAISS.from_documents(_doc,_embeddings)
+if st.button("Generate Improvised Resume"):
+    if not resume_text.strip() or not job_text.strip():
+        st.warning("Enter both resume and job description too")
         
-        vector_store=vector_database(chunks,embeddings)
-        st.success("PDF Proceeded ! U can ask the questions")
+    else:
+        prompt = build_prompt(resume_text,job_text)
+        with st.spinner("Analysising Resume and Rewriting Resume"):
+            try:
+                resp=client.models.generate_content(
+                    model=model_text,
+                    contents=[prompt]
+                )
+                out=extract_text(resp)
 
-    query=st.text_input("Ask your query")
-
-    if query is not None and st.button("Search"):
-        with st.spinner("Searching...."):
-           qa_chain=RetrievalQA.from_chain_type(
-               llm=llm,
-               chain_type="stuff",
-               retriever=vector_store.as_retriever()
-           )
-           response=qa_chain.invoke(query)
-           st.write(response["result"])
-else:
-    st.info("Please Provide the pdf")
+            except Exception as e:
+                out = f"Gemini is giving {e}"
+        st.subheader("Improved Resume")
+        st.markdown(out)
